@@ -15,8 +15,9 @@ const (
 )
 
 var (
-	ErrNoAdapter      = errors.New("no bluetooth adapter found")
-	ErrDeviceNotFound = errors.New("device not found")
+	Adapter        = bluetooth.DefaultAdapter
+	AdapterEnabled = false
+
 	ErrNotConnected   = errors.New("device not connected")
 	ErrCharacteristic = errors.New("characteristic not found")
 )
@@ -44,11 +45,13 @@ func (d *Device) Connect(params ...bluetooth.ConnectionParams) error {
 		params = append(params, bluetooth.ConnectionParams{})
 	}
 	// Enable Bluetooth adapter
-	adapter := bluetooth.DefaultAdapter
-	if err := adapter.Enable(); err != nil {
-		return fmt.Errorf("failed to enable adapter: %w", err)
+	if !AdapterEnabled {
+		if err := Adapter.Enable(); err != nil {
+			return fmt.Errorf("failed to enable adapter: %w", err)
+		}
+		AdapterEnabled = true
 	}
-	d.adapter = adapter
+	d.adapter = Adapter
 
 	// Parse address (handles both MAC and UUID formats)
 	addr, err := ParseAddress(d.address)
