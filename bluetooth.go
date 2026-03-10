@@ -3,7 +3,6 @@ package elklib
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"tinygo.org/x/bluetooth"
 )
