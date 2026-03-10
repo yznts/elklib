@@ -121,8 +121,6 @@ func (d *Device) sendCommand(cmd []byte) error {
 		return fmt.Errorf("failed to write command: %w", err)
 	}
 
-	// Small delay to ensure command processing
-	time.Sleep(50 * time.Millisecond)
 	return nil
 }
 
