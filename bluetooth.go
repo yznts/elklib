@@ -3,6 +3,7 @@ package elklib
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"tinygo.org/x/bluetooth"
@@ -17,6 +18,10 @@ const (
 var (
 	Adapter        = bluetooth.DefaultAdapter
 	AdapterEnabled = false
+
+	// connectMu serializes Enable + Connect calls — CoreBluetooth cannot handle
+	// concurrent connection attempts from multiple goroutines.
+	connectMu sync.Mutex
 
 	ErrNotConnected   = errors.New("device not connected")
 	ErrCharacteristic = errors.New("characteristic not found")
@@ -44,23 +49,26 @@ func (d *Device) Connect(params ...bluetooth.ConnectionParams) error {
 	if len(params) == 0 {
 		params = append(params, bluetooth.ConnectionParams{})
 	}
-	// Enable Bluetooth adapter
+
+	// Serialize Enable + Connect: concurrent attempts cause CoreBluetooth timeouts.
+	connectMu.Lock()
 	if !AdapterEnabled {
 		if err := Adapter.Enable(); err != nil {
+			connectMu.Unlock()
 			return fmt.Errorf("failed to enable adapter: %w", err)
 		}
 		AdapterEnabled = true
 	}
 	d.adapter = Adapter
 
-	// Parse address (handles both MAC and UUID formats)
 	addr, err := ParseAddress(d.address)
 	if err != nil {
+		connectMu.Unlock()
 		return fmt.Errorf("invalid address: %w", err)
 	}
 
-	// Connect to device
 	device, err := d.adapter.Connect(addr, params[0])
+	connectMu.Unlock() // release before service discovery — that part is per-device safe
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
@@ -166,4 +174,21 @@ func (d *Device) SetEffectSpeed(value uint8) error {
 	}
 	cmd := []byte{0x7e, 0x00, 0x02, value, 0x00, 0x00, 0x00, 0x00, 0xef}
 	return d.sendCommand(cmd)
+}
+
+// Ping checks whether the BLE connection is still alive by querying the
+// CoreBluetooth peripheral state. No packets are sent to the device.
+// Returns ErrNotConnected if the connection has been lost.
+func (d *Device) Ping() error {
+	if d.device == nil {
+		return ErrNotConnected
+	}
+	ok, err := d.device.Connected()
+	if err != nil {
+		return fmt.Errorf("connection check: %w", err)
+	}
+	if !ok {
+		return ErrNotConnected
+	}
+	return nil
 }
